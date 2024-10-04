@@ -976,7 +976,7 @@ class Module(ABC):
                 ]
             ),
             "axial_conductances": jnp.stack(
-                [params["axial_conductances"], params["axial_conductances"]]
+                [params["axial_conductances"], 0.0 * params["axial_conductances"]]
             ),
         }
 

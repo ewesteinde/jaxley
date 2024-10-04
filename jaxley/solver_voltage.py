@@ -149,7 +149,7 @@ def step_voltage_implicit_with_jaxley_spsolve(
     num_branchpoints = len(branchpoint_conds_parents)
     branchpoint_diags = -group_and_sum(
         all_branchpoint_vals, branchpoint_group_inds, num_branchpoints
-    )
+    ) + 1e-14  # For numerical stability if axial_conductances == 0.0
     branchpoint_solves = jnp.zeros((num_branchpoints,))
 
     branchpoint_conds_children = -delta_t * branchpoint_conds_children
