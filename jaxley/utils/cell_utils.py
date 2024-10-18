@@ -423,21 +423,22 @@ def compute_axial_conductances(
     sink_comp_inds = np.asarray(comp_edges[condition]["sink"].to_list())
 
     resistivities = jnp.stack([params["axial_resistivity"]] + [params[f"axial_resistivity_{d}"] for d in diffusion_states])
+    print("resistivities", resistivities.shape)
 
     if len(sink_comp_inds) > 0:
         conds_c2c = (
             vmap(vmap(compute_coupling_cond, in_axes=(0, 0, 0, 0, 0, 0)), in_axes=(None, None, 0, 0, None, None))(
                 params["radius"][sink_comp_inds],
                 params["radius"][source_comp_inds],
-                resistivities[sink_comp_inds],
-                resistivities[source_comp_inds],
+                resistivities[:, sink_comp_inds],
+                resistivities[:, source_comp_inds],
                 params["length"][sink_comp_inds],
                 params["length"][source_comp_inds],
             )
             / params["capacitance"][sink_comp_inds]
         )
     else:
-        conds_c2c = jnp.asarray([])
+        conds_c2c = jnp.asarray([[]] * (len(diffusion_states) + 1))
 
     # `branchpoint-to-compartment` (bp2c) axial coupling conductances.
     condition = comp_edges["type"].isin([1, 2])
@@ -447,7 +448,7 @@ def compute_axial_conductances(
         conds_bp2c = (
             vmap(vmap(compute_coupling_cond_branchpoint, in_axes=(0, 0, 0)), in_axes=(None, 0, None))(
                 params["radius"][sink_comp_inds],
-                resistivities[sink_comp_inds],
+                resistivities[:, sink_comp_inds],
                 params["length"][sink_comp_inds],
             )
             / params["capacitance"][sink_comp_inds]  # TODO only v should divide by capacitance.
@@ -462,7 +463,7 @@ def compute_axial_conductances(
     if len(source_comp_inds) > 0:
         conds_c2bp = vmap(vmap(compute_impact_on_node, in_axes=(0, 0, 0)), in_axes=(0, None, 0))(
             params["radius"][source_comp_inds],
-            resistivities[source_comp_inds],
+            resistivities[:, source_comp_inds],
             params["length"][source_comp_inds],
         )
         # For numerical stability. These values are very small, but their scale
