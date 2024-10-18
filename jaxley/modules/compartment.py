@@ -35,7 +35,6 @@ class Compartment(Module):
 
     def __init__(self):
         super().__init__()
-        print("Hello =========")
 
         self.nseg = 1
         self.nseg_per_branch = [1]

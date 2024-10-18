@@ -399,8 +399,24 @@ class Module(ABC):
         return param_state
 
     def diffuse(self, state: str):
+        """Diffuse a particular state across compartments with Fickian diffusion.
+        
+        Args:
+            state: Name of the state that should be diffused.
+        """
+        self._diffuse(state, self.nodes, self.nodes)
+
+    def _diffuse(self, state: str, table_to_update: pd.DataFrame, view: pd.DataFrame):
         self.diffusion_states.append(state)
-        self.nodes[f"axial_resistivity_{state}"] = 1.0
+        table_to_update.loc[view.index.values, f"axial_resistivity_{state}"] = 1.0
+
+        # The diffused state might not exist in all compartments that across which
+        # we are diffusing (e.g. there are active calcium mechanisms only in the soma,
+        # but calcium should still diffuse into the dendrites). Here, we ensure that
+        # the state is not `NaN` in every compartment across which we are diffusing.
+        state_is_nan = pd.isna(view[state])
+        average_state_value = view[state].mean()
+        table_to_update.loc[state_is_nan, state] = average_state_value
 
     def make_trainable(
         self,
@@ -912,7 +928,7 @@ class Module(ABC):
 
         This function is called inside of `integrate` and increments the state of the
         module by one time step. Calls `_step_channels` and `_step_synapse` to update
-        the states of the channels and synapses using fwd_euler.
+        the states of the channels and synapses.
 
         Args:
             u: The state of the module. voltages = u["v"]
@@ -964,19 +980,18 @@ class Module(ABC):
         cm = params["capacitance"]  # Abbreviation.
 
         # Arguments used by all solvers.
+        num_diffused_states = len(self.diffusion_states)
+        diffused_state_zeros = [jnp.zeros_like(v_terms)] * num_diffused_states
         state_vals = {
-            "voltages": jnp.stack([voltages, u["CaCon_i"]]),
+            "voltages": jnp.stack([voltages] + [u[d] for d in self.diffusion_states]),
             "voltage_terms": jnp.stack(
-                [(v_terms + syn_v_terms) / cm, jnp.zeros_like(v_terms)]
+                [(v_terms + syn_v_terms) / cm] + diffused_state_zeros
             ),
             "constant_terms": jnp.stack(
-                [
-                    (const_terms + i_ext + syn_const_terms) / cm,
-                    jnp.zeros_like(const_terms),
-                ]
+                [(const_terms + i_ext + syn_const_terms) / cm] + diffused_state_zeros
             ),
             "axial_conductances": jnp.stack(
-                [params["axial_conductances"], 0.0 * params["axial_conductances"]]
+                [params["axial_conductances"]] + [0.0 * params["axial_conductances"] for _ in range(num_diffused_states)]
             ),
         }
 
@@ -1027,7 +1042,9 @@ class Module(ABC):
                 *state_vals.values(), *solver_kwargs.values(), delta_t
             )
             u["v"] = updated_states[0]
-            u["CaCon_i"] = updated_states[1]
+            for i, diffusion_state in enumerate(self.diffusion_states):
+                # +1 because voltage is the zero-eth element.
+                u[diffusion_state] = updated_states[i + 1]
         elif solver == "crank_nicolson":
             # Crank-Nicolson advances by half a step of backward and half a step of
             # forward Euler.
@@ -1713,14 +1730,13 @@ class View:
         """Set parameter of module (or its view) to a new value within `jit`."""
         return self.pointer._data_set(key, val, self.view, param_state)
 
-    def make_trainable(
-        self,
-        key: str,
-        init_val: Optional[Union[float, list]] = None,
-        verbose: bool = True,
-    ):
-        """Make a parameter trainable."""
-        self.pointer._make_trainable(self.view, key, init_val, verbose=verbose)
+    def diffuse(self, state: str):
+        """Diffuse a particular state across compartments with Fickian diffusion.
+        
+        Args:
+            state: Name of the state that should be diffused.
+        """
+        self._diffuse(state, self.pointer.nodes, self.view)
 
     def add_to_group(self, group_name: str):
         self.pointer._add_to_group(group_name, self.view)
