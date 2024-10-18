@@ -410,7 +410,7 @@ def query_channel_states_and_params(d, keys, idcs):
 
 
 def compute_axial_conductances(
-    comp_edges: pd.DataFrame, params: Dict[str, jnp.ndarray]
+    comp_edges: pd.DataFrame, params: Dict[str, jnp.ndarray], diffusion_states: List[str]
 ) -> jnp.ndarray:
     """Given `comp_edges`, radius, length, r_a, cm, compute the axial conductances.
 
@@ -422,13 +422,15 @@ def compute_axial_conductances(
     source_comp_inds = np.asarray(comp_edges[condition]["source"].to_list())
     sink_comp_inds = np.asarray(comp_edges[condition]["sink"].to_list())
 
+    resistivities = jnp.stack([params["axial_resistivity"]] + [params[f"axial_resistivity_{d}"] for d in diffusion_states])
+
     if len(sink_comp_inds) > 0:
         conds_c2c = (
-            vmap(compute_coupling_cond, in_axes=(0, 0, 0, 0, 0, 0))(
+            vmap(vmap(compute_coupling_cond, in_axes=(0, 0, 0, 0, 0, 0)), in_axes=(None, None, 0, 0, None, None))(
                 params["radius"][sink_comp_inds],
                 params["radius"][source_comp_inds],
-                params["axial_resistivity"][sink_comp_inds],
-                params["axial_resistivity"][source_comp_inds],
+                resistivities[sink_comp_inds],
+                resistivities[source_comp_inds],
                 params["length"][sink_comp_inds],
                 params["length"][source_comp_inds],
             )
@@ -443,34 +445,34 @@ def compute_axial_conductances(
 
     if len(sink_comp_inds) > 0:
         conds_bp2c = (
-            vmap(compute_coupling_cond_branchpoint, in_axes=(0, 0, 0))(
+            vmap(vmap(compute_coupling_cond_branchpoint, in_axes=(0, 0, 0)), in_axes=(None, 0, None))(
                 params["radius"][sink_comp_inds],
-                params["axial_resistivity"][sink_comp_inds],
+                resistivities[sink_comp_inds],
                 params["length"][sink_comp_inds],
             )
-            / params["capacitance"][sink_comp_inds]
+            / params["capacitance"][sink_comp_inds]  # TODO only v should divide by capacitance.
         )
     else:
-        conds_bp2c = jnp.asarray([])
+        conds_bp2c = jnp.asarray([[]] * (len(diffusion_states) + 1))
 
     # `compartment-to-branchpoint` (c2bp) axial coupling conductances.
     condition = comp_edges["type"].isin([3, 4])
     source_comp_inds = np.asarray(comp_edges[condition]["source"].to_list())
 
     if len(source_comp_inds) > 0:
-        conds_c2bp = vmap(compute_impact_on_node, in_axes=(0, 0, 0))(
+        conds_c2bp = vmap(vmap(compute_impact_on_node, in_axes=(0, 0, 0)), in_axes=(0, None, 0))(
             params["radius"][source_comp_inds],
-            params["axial_resistivity"][source_comp_inds],
+            resistivities[source_comp_inds],
             params["length"][source_comp_inds],
         )
         # For numerical stability. These values are very small, but their scale
         # does not matter.
         conds_c2bp *= 1_000
     else:
-        conds_c2bp = jnp.asarray([])
+        conds_c2bp = jnp.asarray([[]] * (len(diffusion_states) + 1))
 
     # All axial coupling conductances.
-    return jnp.concatenate([conds_c2c, conds_bp2c, conds_c2bp])
+    return jnp.concatenate([conds_c2c, conds_bp2c, conds_c2bp], axis=1)
 
 
 def compute_children_and_parents(

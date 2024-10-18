@@ -290,8 +290,12 @@ class Module(ABC):
         raise NotImplementedError
 
     def _compute_axial_conductances(self, params: Dict[str, jnp.ndarray]):
-        """Given radius, length, r_a, compute the axial coupling conductances."""
-        return compute_axial_conductances(self._comp_edges, params)
+        """Given radius, length, r_a, compute the axial coupling conductances.
+        
+        If ion diffusion was activated by the user (with `cell.diffuse()`) then this
+        function also compute the axial conductances for every ion.
+        """
+        return compute_axial_conductances(self._comp_edges, params, self.diffusion_states)
 
     def _append_channel_to_nodes(self, view: pd.DataFrame, channel: "jx.Channel"):
         """Adds channel nodes from constituents to `self.channel_nodes`."""
@@ -400,7 +404,7 @@ class Module(ABC):
 
     def diffuse(self, state: str):
         """Diffuse a particular state across compartments with Fickian diffusion.
-        
+
         Args:
             state: Name of the state that should be diffused.
         """
@@ -990,9 +994,7 @@ class Module(ABC):
             "constant_terms": jnp.stack(
                 [(const_terms + i_ext + syn_const_terms) / cm] + diffused_state_zeros
             ),
-            "axial_conductances": jnp.stack(
-                [params["axial_conductances"]] + [0.0 * params["axial_conductances"] for _ in range(num_diffused_states)]
-            ),
+            "axial_conductances": params["axial_conductances"],
         }
 
         # Add solver specific arguments.
@@ -1732,7 +1734,7 @@ class View:
 
     def diffuse(self, state: str):
         """Diffuse a particular state across compartments with Fickian diffusion.
-        
+
         Args:
             state: Name of the state that should be diffused.
         """
