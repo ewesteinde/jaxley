@@ -1,0 +1,80 @@
+# This file is part of Jaxley, a differentiable neuroscience simulator. Jaxley is
+# licensed under the Apache License Version 2.0, see <https://www.apache.org/licenses/>
+
+from abc import ABC, abstractmethod
+from typing import Dict, Optional, Tuple
+
+import jax.numpy as jnp
+
+
+class Pump:
+    """Pump base class. All pumps inherit from this class.
+
+    A pump in Jaxley is everything that modifies the intracellular ion concentrations.
+    """
+
+    _name = None
+    pump_params = None
+    pump_states = None
+    current_name = None
+
+    def __init__(self, name: Optional[str] = None):
+        self._name = name if name else self.__class__.__name__
+
+    @property
+    def name(self) -> Optional[str]:
+        """The name of the channel (by default, this is the class name)."""
+        return self._name
+
+    def change_name(self, new_name: str):
+        """Change the pump name.
+
+        Args:
+            new_name: The new name of the pump.
+
+        Returns:
+            Renamed pump, such that this function is chainable.
+        """
+        old_prefix = self._name + "_"
+        new_prefix = new_name + "_"
+
+        self._name = new_name
+        self.pump_params = {
+            (
+                new_prefix + key[len(old_prefix) :]
+                if key.startswith(old_prefix)
+                else key
+            ): value
+            for key, value in self.pump_params.items()
+        }
+
+        self.pump_states = {
+            (
+                new_prefix + key[len(old_prefix) :]
+                if key.startswith(old_prefix)
+                else key
+            ): value
+            for key, value in self.pump_states.items()
+        }
+        return self
+
+    def update_states(
+        self, states, dt, v, params
+    ) -> Tuple[jnp.ndarray, Tuple[jnp.ndarray, jnp.ndarray]]:
+        """Return the updated states."""
+        raise NotImplementedError
+
+    def compute_current(
+        self, states: Dict[str, jnp.ndarray], v, params: Dict[str, jnp.ndarray]
+    ):
+        """Given channel states and voltage, return the current through the channel.
+
+        Args:
+            states: All states of the compartment.
+            v: Voltage of the compartment in mV.
+            params: Parameters of the channel (conductances in `S/cm2`).
+
+        Returns:
+            Current in `uA/cm2`.
+        """
+        raise NotImplementedError
