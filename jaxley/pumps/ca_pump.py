@@ -17,11 +17,16 @@ class CaPump(Pump):
             f"{self._name}_depth": 0.1,  # Depth of shell in um.
             f"{self._name}_minCai": 1e-4,  # Minimum intracell. ca concentration in mM.
         }
-        self.pump_states = {"CaCon_i": 5e-05}
+        self.pump_states = {}
+        self.ion_name = "CaCon_i"
         self.META = {
             "reference": "Modified from Destexhe et al., 1994",
             "mechanism": "Calcium dynamics",
         }
+
+    def update_states(self, u, dt, voltages, params):
+        """Update states if necessary (but this pump has no states to update)."""
+        return {"CaCon_i": u["CaCon_i"]}
 
     def compute_current(self, u, dt, voltages, params):
         """Return change of calcium concentration based on calcium current and decay."""

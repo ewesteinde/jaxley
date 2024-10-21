@@ -14,6 +14,7 @@ from jax.lax import ScatterDimensionNumbers, scatter_add
 from matplotlib.axes import Axes
 
 from jaxley.channels import Channel
+from jaxley.pumps import Pump
 from jaxley.solver_voltage import (
     step_voltage_explicit,
     step_voltage_implicit_with_jax_spsolve,
@@ -45,6 +46,9 @@ class Module(ABC):
 
     This base class defines the scaffold for all jaxley modules (compartments,
     branches, cells, networks).
+
+    Note that the `__init__()` method is not abstract. This is because each module
+    type has a different initialization procedure.
     """
 
     def __init__(self):
@@ -319,6 +323,26 @@ class Module(ABC):
         # Loop over all new parameters, e.g. gNa, eNa.
         for key in channel.channel_states:
             self.nodes.loc[view.index.values, key] = channel.channel_states[key]
+
+    def _append_pump_to_nodes(self, view: pd.DataFrame, pump: "jx.Pump"):
+        """Adds pump nodes from constituents to `self.pump_nodes`."""
+        name = pump._name
+
+        # Pump does not yet exist in the `jx.Module` at all.
+        if name not in [c._name for c in self.pumps]:
+            self.pumps.append(pump)
+            self.nodes[name] = False  # Previous columns do not have the new pump.
+
+        # Add a binary column that indicates if the pump is present.
+        self.nodes.loc[view.index.values, name] = True
+
+        # Loop over all new parameters.
+        for key in pump.pump_params:
+            self.nodes.loc[view.index.values, key] = pump.pump_params[key]
+
+        # Loop over all new states.
+        for key in pump.pump_states:
+            self.nodes.loc[view.index.values, key] = pump.pump_states[key]
 
     def set(self, key: str, val: Union[float, jnp.ndarray]):
         """Set parameter of module (or its view) to a new value.
@@ -915,6 +939,16 @@ class Module(ABC):
     def _insert(self, channel, view):
         self._append_channel_to_nodes(view, channel)
 
+    def pump(self, pump: Pump):
+        """Insert a pump into the module.
+
+        Args:
+            pump: The pump to insert."""
+        self._pump(pump, self.nodes)
+
+    def _pump(self, pump, view):
+        self._append_pump_to_nodes(view, pump)
+
     def init_syns(self):
         self.initialized_syns = True
 
@@ -965,6 +999,11 @@ class Module(ABC):
         u, (v_terms, const_terms) = self._step_channels(
             u, delta_t, self.channels, self.nodes, params
         )
+
+        # # Step of the Pumps.
+        # u, (v_terms, const_terms) = self._step_pumps(
+        #     u, delta_t, self.pumps, self.nodes, params
+        # )
 
         # Step of the synapse.
         u, (syn_v_terms, syn_const_terms) = self._step_synapse(

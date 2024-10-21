@@ -58,16 +58,10 @@ class Pump:
         }
         return self
 
-    def update_states(
-        self, states, dt, v, params
-    ) -> Tuple[jnp.ndarray, Tuple[jnp.ndarray, jnp.ndarray]]:
-        """Return the updated states."""
-        raise NotImplementedError
-
     def compute_current(
         self, states: Dict[str, jnp.ndarray], v, params: Dict[str, jnp.ndarray]
     ):
-        """Given channel states and voltage, return the current through the channel.
+        """Given channel states and voltage, return the change in ion concentration.
 
         Args:
             states: All states of the compartment.
@@ -75,6 +69,6 @@ class Pump:
             params: Parameters of the channel (conductances in `S/cm2`).
 
         Returns:
-            Current in `uA/cm2`.
+            Ion concentration change in `mM`.
         """
         raise NotImplementedError
